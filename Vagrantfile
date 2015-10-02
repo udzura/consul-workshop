@@ -225,6 +225,13 @@ Vagrant.configure(2) do |config|
           sudo journalctl -u consul -e -n 20
         EOS
       end
+
+      vm.provision "step7", type: "shell" do |s|
+        s.inline = indent(<<-EOS)
+          set -x
+          sudo kill -9 $(pgrep rackup)
+        EOS
+      end
     end
   end
 end
