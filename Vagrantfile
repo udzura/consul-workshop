@@ -93,6 +93,53 @@ Vagrant.configure(2) do |config|
       EOS
     end
 
+    vm.provision "step6", type: "shell" do |s|
+      s.inline = indent(<<-EOS)
+        set -x
+        sudo ruby -i -e 'print ARGF.read.sub(/listen +80/, "listen 10080")' /etc/nginx/nginx.conf
+        cat <<TEMPLATE | sudo tee /usr/local/sample.conf.ctmpl
+        upstream backend_apps {
+        {{range service "production.application@dc1" "passing"}}
+            server {{.Address}}:{{.Port}};{{end}}
+        }
+
+        server {
+            listen      80;
+            server_name _;
+
+            proxy_set_header Host               \\$host;
+            proxy_set_header X-Real-IP          \\$remote_addr;
+            proxy_set_header X-Forwarded-For    \\$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host   \\$host;
+            proxy_set_header X-Forwarded-Server \\$host;
+
+            location / {
+                proxy_pass http://backend_apps;
+            }
+
+        }
+        TEMPLATE
+
+        cat <<TEMPLATE | sudo tee /etc/consul-template/consul-template.hcl
+        consul = "127.0.0.1:8500"
+        retry = "10s"
+        max_stale = "10m"
+        log_level = "info"
+        pid_file = "/var/run/consul-template.pid"
+
+        template {
+          source = "/usr/local/sample.conf.ctmpl"
+          destination = "/etc/nginx/conf.d/sample.conf"
+          command = "systemctl reload nginx"
+        }
+        TEMPLATE
+
+        sudo systemctl restart consul-template
+        sleep 2
+        sudo journalctl -u consul-template -e -n 20
+      EOS
+    end
+
   end
 
   [1, 2, 3].each do |num|
@@ -155,7 +202,29 @@ Vagrant.configure(2) do |config|
           sudo journalctl -u consul -u ruby-app -e -n 40
         EOS
       end
+
+      vm.provision "step6", type: "shell" do |s|
+        s.inline = indent(<<-EOS)
+          set -x
+          cat <<JSON | sudo tee /etc/consul/step5-check-application.json
+          {
+            "service": {
+              "id": "application",
+              "name": "application",
+              "port": 3000,
+              "tags": ["production"],
+              "check": {
+                "script": "/usr/lib64/nagios/plugins/check_http -H localhost -p 3000",
+                "interval": "30s"
+              }
+            }
+          }
+          JSON
+          sudo systemctl reload consul
+          sleep 2
+          sudo journalctl -u consul -e -n 20
+        EOS
+      end
     end
   end
-
 end
