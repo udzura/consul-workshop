@@ -44,7 +44,7 @@ Vagrant.configure(2) do |config|
       sudo iptables -F
       sudo yum -y update-cache
       sudo yum -y install epel-release
-      sudo yum -y install jq
+      sudo yum -y install jq nagios-plugins-all
       sudo yum -y install /vagrant/rpms/consul-0.5.2-1.el7.centos.x86_64.rpm || true
     EOS
   end
@@ -53,7 +53,7 @@ Vagrant.configure(2) do |config|
     vm.provision "step1", type: "shell" do |s|
       s.inline = indent(<<-EOS)
         set -x
-        echo '{"server": true, "bind_addr": "192.168.100.101", "bootstrap_expect": 3}' | sudo tee /etc/consul/default.json
+        echo '{"server": true, "bind_addr": "192.168.100.101", "client_addr": "0.0.0.0", "bootstrap_expect": 3}' | sudo tee /etc/consul/default.json
         sudo yum -y install /vagrant/rpms/consul-ui-0.5.2-1.el7.centos.x86_64.rpm
         sudo yum -y install /vagrant/rpms/consul-template-0.10.0-1.el7.centos.x86_64.rpm
         sudo systemctl restart consul
@@ -61,6 +61,38 @@ Vagrant.configure(2) do |config|
         sudo journalctl -u consul -e -n 20
       EOS
     end
+
+    vm.provision "step3", type: "shell" do |s|
+      s.inline = indent(<<-EOS)
+        set -x
+        sudo yum -y install nginx
+
+        cat <<JSON | sudo tee /etc/consul/step3-check-nginx.json
+        {
+          "service": {
+            "id": "nginx",
+            "name": "nginx",
+            "port": 80,
+            "check": {
+              "script": "/usr/lib64/nagios/plugins/check_http -H localhost",
+              "interval": "30s"
+            }
+          }
+        }
+        JSON
+        sudo systemctl reload consul
+        sleep 2
+        sudo journalctl -u consul -e -n 20
+      EOS
+    end
+
+    vm.provision "step4", type: "shell" do |s|
+      s.inline = indent(<<-EOS)
+        set -x
+        sudo systemctl restart nginx
+      EOS
+    end
+
   end
 
   [1, 2, 3].each do |num|
@@ -76,6 +108,51 @@ Vagrant.configure(2) do |config|
           consul join 192.168.100.101
           sleep 5
           sudo journalctl -u consul -e -n 20
+        EOS
+      end
+
+      vm.provision "step5", type: "shell" do |s|
+        s.inline = indent(<<-EOS)
+          set -x
+          sudo yum -y install rubygem-rack
+
+          cat <<RUBY | sudo tee /usr/local/app.ru
+          require "socket"
+          run lambda{|e| [200, {'Content-Type'=>'text/plain'}, ["OK: response from " + Socket.gethostname]] }
+          RUBY
+          cat <<UNIT | sudo tee /etc/systemd/system/ruby-app.service
+
+          [Unit]
+          Description=Ruby rack app
+          After=network.target
+          Requires=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/rackup -p 3000 /usr/local/app.ru
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          systemctl enable ruby-app.service
+          systemctl start ruby-app.service
+
+          cat <<JSON | sudo tee /etc/consul/step5-check-application.json
+          {
+            "service": {
+              "id": "application",
+              "name": "application",
+              "port": 3000,
+              "check": {
+                "script": "/usr/lib64/nagios/plugins/check_http -H localhost -p 3000",
+                "interval": "30s"
+              }
+            }
+          }
+          JSON
+          sudo systemctl reload consul
+          sleep 2
+          sudo journalctl -u consul -u ruby-app -e -n 40
         EOS
       end
     end
