@@ -20,7 +20,7 @@ Vagrant.configure(2) do |config|
       end
       c.vm.network :private_network, ip: ip
 
-      blk.call(c) if blk
+      blk.call(c.vm) if blk
     end
   end
 
@@ -30,7 +30,13 @@ Vagrant.configure(2) do |config|
     vbox.customize ["modifyvm", :id, "--natdnshostresolver1", "off"]
   end
 
-  config.define_vm :front,  ip: "192.168.100.101", forwarded_port_pairs: {80 => 8080, 8500 => 8500}
+  config.define_vm :front,  ip: "192.168.100.101", forwarded_port_pairs: {80 => 8080, 8500 => 8500} do |vm|
+    vm.provision "step1", type: "shell" do |s|
+      s.inline = <<-EOS
+      EOS
+    end
+  end
+
   config.define_vm :back01, ip: "192.168.100.111", forwarded_port_pairs: {3000 => 3000}
   config.define_vm :back02, ip: "192.168.100.112", forwarded_port_pairs: {3000 => 3000}
   config.define_vm :back03, ip: "192.168.100.113", forwarded_port_pairs: {3000 => 3000}
