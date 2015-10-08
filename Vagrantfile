@@ -120,7 +120,7 @@ Vagrant.configure(2) do |config|
         }
         TEMPLATE
 
-        cat <<TEMPLATE | sudo tee /etc/consul-template/consul-template.hcl
+        cat <<HCL | sudo tee /etc/consul-template/consul-template.hcl
         consul = "127.0.0.1:8500"
         retry = "10s"
         max_stale = "10m"
@@ -132,7 +132,7 @@ Vagrant.configure(2) do |config|
           destination = "/etc/nginx/conf.d/sample.conf"
           command = "systemctl reload nginx"
         }
-        TEMPLATE
+        HCL
 
         sudo systemctl restart consul-template
         sleep 2
@@ -148,7 +148,6 @@ Vagrant.configure(2) do |config|
       vm.provision "step2", type: "shell" do |s|
         s.inline = indent(<<-EOS)
           set -x
-          sudo yum -y install /vagrant/rpms/consul-0.5.2-1.el7.centos.x86_64.rpm
           echo '{"server": true, "bind_addr": "#{each_ip}"}' | sudo tee /etc/consul/default.json
           sudo systemctl restart consul
           sleep 1
