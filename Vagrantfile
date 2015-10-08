@@ -42,7 +42,7 @@ Vagrant.configure(2) do |config|
     s.inline = indent(<<-EOS)
       set -x
       sudo iptables -F
-      sudo yum -y update-cache
+      sudo yum -y check-update
       sudo yum -y install epel-release
       sudo yum -y install jq nagios-plugins-all
       sudo yum -y install /vagrant/rpms/consul-0.5.2-1.el7.centos.x86_64.rpm || true
